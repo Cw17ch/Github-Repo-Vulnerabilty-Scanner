@@ -10,3 +10,4 @@ pydantic
 python-dotenv
 langchain-google-genai
 ```
+![image](https://github.com/Cw17ch/Github-Repo-Vulnerabilty-Scanner/edit/Screenshot 2026-1)
