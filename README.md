@@ -1,5 +1,6 @@
 # Github-Repo-Vulnerabilty-Scanner
 A fast, intuitive GitHub repository Vulnerability Scanner and Solver that runs on your local Python server.
+## Agentic AI Workflow Built with LangChain & Gemini
 ### Note: Update .env file with your Gemini api key before running.
 ## Requirements:
 ```
