@@ -68,12 +68,28 @@ def parse_github_url(url: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 def fetch_repo_files(owner: str, repo: str) -> List[Dict[str, str]]:
-    """Fetch all source code files from GitHub REST API."""
     repo_api_url = f"https://api.github.com/repos/{owner}/{repo}"
-    headers = {"Accept": "application/vnd.github.v3+json"}
+    
+    # Read token from environment variables
+    github_token = os.getenv("GITHUB_TOKEN")
+    
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "FastAPI-GitHub-Inspector-App"
+    }
+    
+    # Add Bearer token if present
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
     
     repo_res = requests.get(repo_api_url, headers=headers)
-    if repo_res.status_code == 404:
+    
+    if repo_res.status_code == 403:
+        raise HTTPException(
+            status_code=403, 
+            detail="GitHub API Rate Limit Exceeded or Access Forbidden. Please check GITHUB_TOKEN."
+        )
+    elif repo_res.status_code == 404:
         raise HTTPException(status_code=404, detail="Repository not found or is private.")
     elif repo_res.status_code != 200:
         raise HTTPException(status_code=repo_res.status_code, detail="Failed to fetch repository info from GitHub.")
@@ -85,31 +101,6 @@ def fetch_repo_files(owner: str, repo: str) -> List[Dict[str, str]]:
     
     if tree_res.status_code != 200:
         raise HTTPException(status_code=tree_res.status_code, detail="Failed to retrieve file tree from GitHub.")
-
-    tree_data = tree_res.json().get("tree", [])
-    extracted_files = []
-
-    for item in tree_data:
-        path = item.get("path", "")
-        item_type = item.get("type", "")
-
-        if item_type != "blob" or any(ignored in path.split("/") for ignored in IGNORED_PATHS):
-            continue
-
-        _, ext = os.path.splitext(path)
-        if ext.lower() in ALLOWED_EXTENSIONS:
-            raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{path}"
-            raw_res = requests.get(raw_url)
-            
-            content = raw_res.text if raw_res.status_code == 200 else f"Error reading content (HTTP {raw_res.status_code})"
-            
-            extracted_files.append({
-                "path": path,
-                "language": ext.lstrip("."),
-                "content": content
-            })
-
-    return extracted_files
 
 # =====================================================================
 # 2. SCHEMAS & API ENDPOINTS
