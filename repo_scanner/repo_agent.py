@@ -69,40 +69,57 @@ def parse_github_url(url: str) -> tuple[str, str]:
 
 def fetch_repo_files(owner: str, repo: str) -> List[Dict[str, str]]:
     repo_api_url = f"https://api.github.com/repos/{owner}/{repo}"
-    
-    # Read token from environment variables
-    github_token = os.getenv("GITHUB_TOKEN")
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
     
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": "FastAPI-GitHub-Inspector-App"
     }
     
-    # Add Bearer token if present
     if github_token:
-        headers["Authorization"] = f"Bearer {github_token}"
+        headers["Authorization"] = f"token {github_token}"
     
     repo_res = requests.get(repo_api_url, headers=headers)
-    
-    if repo_res.status_code == 403:
-        raise HTTPException(
-            status_code=403, 
-            detail="GitHub API Rate Limit Exceeded or Access Forbidden. Please check GITHUB_TOKEN."
-        )
-    elif repo_res.status_code == 404:
-        raise HTTPException(status_code=404, detail="Repository not found or is private.")
-    elif repo_res.status_code != 200:
-        raise HTTPException(status_code=repo_res.status_code, detail="Failed to fetch repository info from GitHub.")
+    if repo_res.status_code != 200:
+        raise HTTPException(status_code=repo_res.status_code, detail="Failed to fetch repository from GitHub.")
     
     default_branch = repo_res.json().get("default_branch", "main")
-
     tree_api_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1"
     tree_res = requests.get(tree_api_url, headers=headers)
     
     if tree_res.status_code != 200:
         raise HTTPException(status_code=tree_res.status_code, detail="Failed to retrieve file tree from GitHub.")
 
-# =====================================================================
+    tree_data = tree_res.json().get("tree", [])
+    extracted_files = []
+
+    for item in tree_data:
+        path = item.get("path", "")
+        item_type = item.get("type", "")
+
+        if item_type != "blob" or any(ignored in path.split("/") for ignored in IGNORED_PATHS):
+            continue
+
+        _, ext = os.path.splitext(path)
+        if ext.lower() in ALLOWED_EXTENSIONS or ext == "":
+            raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{path}"
+            raw_res = requests.get(raw_url)
+            
+            # SAFEGUARD: Ensure content is strictly a string and never None
+            if raw_res.status_code == 200 and raw_res.text is not None:
+                content = str(raw_res.text)
+                if "\x00" in content[:1024]:  # Skip binary contents
+                    continue
+            else:
+                content = ""
+            
+            extracted_files.append({
+                "path": path,
+                "language": ext.lstrip(".") if ext else "plain text",
+                "content": content
+            })
+
+    return extracted_files# =====================================================================
 # 2. SCHEMAS & API ENDPOINTS
 # =====================================================================
 
